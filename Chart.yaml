@@ -1,0 +1,13 @@
+apiVersion: v2
+name: vault
+version: 1.0.0
+description: Vault HA managed by ArgoCD
+
+dependencies:
+  - name: vault
+    version: 0.28.1
+    repository: "file://charts/vault-0.28.1.tgz"
+
+      #- name: external-secrets
+      #version: 0.9.13
+      #repository: "file://charts/external-secrets-0.9.13.tgz"

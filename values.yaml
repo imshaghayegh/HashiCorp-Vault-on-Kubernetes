@@ -1,0 +1,151 @@
+# ===== External Secrets Configuration =====
+#external-secrets:
+#  installCRDs: true
+#  global:
+#  imagePullSecrets:
+#    - name: nexus-prod
+#  
+#  image:
+#    repository: repo.bmi.ir:443/repository/linux_devops/k8s/external-secrets
+#    tag: v0.9.13
+#
+#  webhook:
+#    image:
+#      repository: repo.bmi.ir:443/repository/linux_devops/k8s/external-secrets
+#      tag: v0.9.13
+#
+#  certController:
+#    image:
+#      repository: repo.bmi.ir:443/repository/linux_devops/k8s/external-secrets
+#      tag: v0.9.13
+#
+# ===== ExternalSecret for Root Token =====
+externalSecret:
+  enabled: false
+#  storeRef: "vault-transit-backend"
+#  storeKind: "ClusterSecretStore"
+#  remoteKey: "secret/data/vault-main/root-token"
+#  remoteProperty: "token"
+#  refreshInterval: "1h"
+
+vault:
+  global:
+    enabled: true
+    tlsDisable: false
+    imagePullSecrets:
+      - name: nexus-secret
+
+  injector:
+    enabled: true
+    replicas: 2
+    image:
+      repository: linuxdocker.srvdc.ir/linux_devops/hashicorp/vault-k8s
+      tag: 1.7.1
+
+  server:
+    enabled: true
+    image:
+      repository: linuxdocker.srvdc.ir/hashicorp/vault
+      tag: 1.21.1
+
+    extraArgs: "-log-level=trace -log-format=json"
+
+    updateStrategyType: RollingUpdate
+
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+
+    extraEnvironmentVars:
+      VAULT_SERVICE: "{{ .Release.Name }}"
+      VAULT_CACERT: /vault/userconfig/vault-tls/vault.ca
+      VAULT_TLSCERT: /vault/userconfig/vault-tls/vault.crt
+      VAULT_TLSKEY: /vault/userconfig/vault-tls/vault.key
+
+
+    volumes:
+      - name: vault-tls
+        secret:
+          secretName: vault-tls
+          defaultMode: 0400
+
+
+    volumeMounts:
+      - name: vault-tls
+        mountPath: /vault/userconfig/vault-tls
+        readOnly: true
+
+
+    ha:
+      enabled: true
+      replicas: 3
+
+      raft:
+        enabled: true
+        setNodeId: true
+
+        config: |
+          ui = true
+
+          listener "tcp" {
+            address = "[::]:8200"
+            cluster_address = "[::]:8201"
+            tls_disable = 0
+            tls_cert_file = "/vault/userconfig/vault-tls/vault.crt"
+            tls_key_file  = "/vault/userconfig/vault-tls/vault.key"
+            tls_client_ca_file = "/vault/userconfig/vault-tls/vault.ca"
+            tls_min_version = "tls12"
+          }
+
+          storage "raft" {
+            path = "/vault/data"
+
+            retry_join {
+              leader_api_addr = "https://{{ .Release.Name }}-0.{{ .Release.Name }}-internal:8200"
+              leader_ca_cert_file = "/vault/userconfig/vault-tls/vault.ca"
+              leader_client_cert_file = "/vault/userconfig/vault-tls/vault.crt"
+              leader_client_key_file  = "/vault/userconfig/vault-tls/vault.key"
+            }
+
+            retry_join {
+              leader_api_addr = "https://{{ .Release.Name }}-1.{{ .Release.Name }}-internal:8200"
+              leader_ca_cert_file = "/vault/userconfig/vault-tls/vault.ca"
+              leader_client_cert_file = "/vault/userconfig/vault-tls/vault.crt"
+              leader_client_key_file  = "/vault/userconfig/vault-tls/vault.key"
+            }
+
+            retry_join {
+              leader_api_addr = "https://{{ .Release.Name }}-2.{{ .Release.Name }}-internal:8200"
+              leader_ca_cert_file = "/vault/userconfig/vault-tls/vault.ca"
+              leader_client_cert_file = "/vault/userconfig/vault-tls/vault.crt"
+              leader_client_key_file  = "/vault/userconfig/vault-tls/vault.key"
+            }
+          }
+
+          service_registration "kubernetes" {}
+
+    dataStorage:
+      enabled: true
+      size: 10Gi
+      storageClass: local-path
+
+    auditStorage:
+      enabled: true
+      size: 5Gi
+      storageClass: local-path
+
+    service:
+      enabled: true
+      type: ClusterIP
+      port: 8200
+      targetPort: 8200
+
+  ui:
+    enabled: true
+    serviceType: NodePort
+    serviceNodePort: 30200
+    externalPort: 8200
